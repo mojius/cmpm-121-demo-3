@@ -11,7 +11,7 @@ const MERRILL_CLASSROOM = leaflet.latLng({
 });
 
 const GAMEPLAY_ZOOM_LEVEL = 19;
-const TILE_DEGREES = 1e-4;
+const TILE_DEGREES = 1e-4; //0.0001 degrees wide
 const NEIGHBORHOOD_SIZE = 8;
 const PIT_SPAWN_PROBABILITY = 0.1;
 
@@ -64,7 +64,9 @@ function makePit(i: number, j: number) {
         const container = document.createElement("div");
         container.innerHTML = `
                 <div>There is a pit here at "${i},${j}". It has value <span id="value">${value}</span>.</div>
-                <button id="poke">poke</button>`;
+                <button id="poke">poke</button>
+                <button id="deposit">deposit</button>`;
+
         const poke = container.querySelector<HTMLButtonElement>("#poke")!;
         poke.addEventListener("click", () => {
             value--;
@@ -72,6 +74,18 @@ function makePit(i: number, j: number) {
             points++;
             statusPanel.innerHTML = `${points} points accumulated`;
         });
+        const deposit = container.querySelector<HTMLButtonElement>("#deposit")!;
+        deposit.addEventListener("click", () => {
+            const ZERO_POINTS = 0;
+            if (points <= ZERO_POINTS) return;
+
+            points--;
+            value++;
+            container.querySelector<HTMLSpanElement>("#value")!.innerHTML = value.toString();
+            statusPanel.innerHTML = (points == (ZERO_POINTS)) ? `No points yet...` : `${points} points accumulated`;
+
+        });
+
         return container;
     });
     pit.addTo(map);
