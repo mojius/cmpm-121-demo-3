@@ -3,32 +3,46 @@ import "./style.css";
 import leaflet from "leaflet";
 import luck from "./luck";
 import "./leafletWorkaround";
-
-const ZERO_POINTS = 0;
+import { Board } from "./board.ts";
+import { Cell } from "./board.ts";
 
 interface Coin {
-    xPos: number;
-    yPos: number;
+    cell: Cell;
     index: number;
 }
 
-const inventory: Coin[] = [];
-const pitData: Map<string, Coin[]> = new Map<string, Coin[]>();
+interface CoinList {
+    inventory: Coin[];
+}
+
+function displayCoins(coinList: CoinList): string {
+    let coinListString = "";
+    coinList.inventory.forEach((coin, index) => {
+        coinListString += `[${coin.cell.i},${coin.cell.j}]: index ${coin.index}`;
+        if (index !== coinList.inventory.length - 1)
+            coinListString += `, `;
+    });
+
+    return coinListString;
+}
 
 export const MERRILL_CLASSROOM = leaflet.latLng({
     lat: 36.9995,
     lng: - 122.0533
 });
 
-// const NULL_ISLAND = leaflet.latLng({
-//     lat: 0,
-//     lng: 0
-// });
-
+const masterCoinList: CoinList =
+{
+    inventory: [],
+};
 const GAMEPLAY_ZOOM_LEVEL = 19;
 const TILE_DEGREES = 1e-4; //0.0001 degrees wide
 const NEIGHBORHOOD_SIZE = 8;
 const PIT_SPAWN_PROBABILITY = 0.1;
+
+const board: Board = new Board(TILE_DEGREES, NEIGHBORHOOD_SIZE);
+
+const pitData: Map<Cell, Coin[]> = new Map<Cell, Coin[]>();
 
 const mapContainer = document.querySelector<HTMLElement>("#map")!;
 
@@ -68,24 +82,23 @@ function pitFactory(i: number, j: number) {
     if (pitMap.get(`${i},${j}`)) {
         return pitMap.get(`${i}, ${j}`);
     } else {
-        const bounds = leaflet.latLngBounds([
-            [MERRILL_CLASSROOM.lat + i * TILE_DEGREES,
-            MERRILL_CLASSROOM.lng + j * TILE_DEGREES],
-            [MERRILL_CLASSROOM.lat + (i + 1) * TILE_DEGREES,
-            MERRILL_CLASSROOM.lng + (j + 1) * TILE_DEGREES],
-        ]);
+        const currentCell: Cell = board.createCanonicalCell(i, j);
+        if (currentCell == undefined) return;
 
-        const pit = leaflet.rectangle(bounds) as leaflet.Layer;
-        const coinList: Coin[] = [];
-        pitData.set(`${i},${j}`, coinList);
+        const pit = leaflet.rectangle(board.getCellBounds(currentCell));
+        const coinList: CoinList =
+        {
+            inventory: []
+        };
+
+        pitData.set(currentCell, coinList.inventory);
 
         pit.bindPopup(() => {
-            const numOfCoins = Number((luck(`${i},${j}`) * 10).toFixed(0));
+            const numOfCoins = 5;
             for (let k = 0; k < numOfCoins; k++) {
-                coinList.push(
+                coinList.inventory.push(
                     {
-                        xPos: i,
-                        yPos: j,
+                        cell: currentCell,
                         index: k
                     });
             }
@@ -93,22 +106,22 @@ function pitFactory(i: number, j: number) {
 
             const container = document.createElement("div");
             container.innerHTML = `
-                <div>There is a pit here at "${i},${j}". It has the following: <span id="value">${coinList.toString()}</span>.</div>
+                <div>There is a pit here at "${i},${j}". It has the following: <span id="value">${displayCoins(coinList)}</span>.</div>
                 <button id="poke">poke</button>
                 <button id="deposit">deposit</button>`;
 
             const poke = container.querySelector<HTMLButtonElement>("#poke")!;
             poke.addEventListener("click", () => {
-                inventory.push(coinList.pop()!);
-                container.querySelector<HTMLSpanElement>("#value")!.innerHTML = coinList.toString();
-                statusPanel.innerHTML = `Coins accumulated: ${inventory.toString()}`;
+                masterCoinList.inventory.push(coinList.inventory.pop()!);
+                container.querySelector<HTMLSpanElement>("#value")!.innerHTML = displayCoins(coinList);
+                statusPanel.innerHTML = `Coins accumulated: ${displayCoins(masterCoinList)}`;
             });
             const deposit = container.querySelector<HTMLButtonElement>("#deposit")!;
             deposit.addEventListener("click", () => {
-                if (inventory.length == 0) return;
-                coinList.push(inventory.pop()!);
-                container.querySelector<HTMLSpanElement>("#value")!.innerHTML = coinList.toString();
-                statusPanel.innerHTML = `Coins accumulated: ${inventory.toString()}`;
+                if (masterCoinList.inventory.length == 0) return;
+                coinList.inventory.push(masterCoinList.inventory.pop()!);
+                container.querySelector<HTMLSpanElement>("#value")!.innerHTML = displayCoins(coinList);
+                statusPanel.innerHTML = `Coins accumulated: ${displayCoins(masterCoinList)}`;
 
             });
 
