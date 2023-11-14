@@ -1,10 +1,12 @@
 import "leaflet/dist/leaflet.css";
 import "./style.css";
-import leaflet from "leaflet";
+import leaflet, { LatLng } from "leaflet";
 import luck from "./luck";
 import "./leafletWorkaround";
 import { Board } from "./board.ts";
 import { Cell } from "./board.ts";
+
+const SHIFT_AMOUNT = 8;
 
 interface Coin {
     cell: Cell;
@@ -31,6 +33,7 @@ export const MERRILL_CLASSROOM = leaflet.latLng({
     lng: - 122.0533
 });
 
+// You need to store this too
 const masterCoinList: CoinList =
 {
     inventory: [],
@@ -42,6 +45,7 @@ const PIT_SPAWN_PROBABILITY = 0.1;
 
 const board: Board = new Board(TILE_DEGREES, NEIGHBORHOOD_SIZE);
 
+// You need to store this map in some local storage data 
 const pitData: Map<Cell, Coin[]> = new Map<Cell, Coin[]>();
 
 const mapContainer = document.querySelector<HTMLElement>("#map")!;
@@ -71,18 +75,43 @@ sensorButton.addEventListener("click", () => {
     navigator.geolocation.watchPosition((position) => {
         playerMarker.setLatLng(leaflet.latLng(position.coords.latitude, position.coords.longitude));
         worldMapData.setView(playerMarker.getLatLng());
+        getLocalPits();
     });
+});
+
+const northButton = document.querySelector("#north")!;
+const southButton = document.querySelector("#south")!;
+const eastButton = document.querySelector("#east")!;
+const westButton = document.querySelector("#west")!;
+
+northButton.addEventListener("click", () => {
+    shiftPlayerLocation(SHIFT_AMOUNT, 0);
+});
+
+southButton.addEventListener("click", () => {
+    shiftPlayerLocation(-SHIFT_AMOUNT, 0);
+});
+
+eastButton.addEventListener("click", () => {
+    shiftPlayerLocation(0, SHIFT_AMOUNT);
+});
+
+westButton.addEventListener("click", () => {
+    shiftPlayerLocation(0, -SHIFT_AMOUNT);
 });
 
 const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
 statusPanel.innerHTML = "No points yet...";
 
+getLocalPits();
+
+
 function pitFactory(i: number, j: number) {
     // Does this pit already exist at these coordinates?
-    if (pitMap.get(`${i},${j}`)) {
-        return pitMap.get(`${i}, ${j}`);
+    if (pitMap.has(`${i},${j}`)) {
+        return pitMap.get(`${i},${j}`);
     } else {
-        const currentCell: Cell = board.createCanonicalCell(i, j);
+        const currentCell: Cell = board.getCanonicalCell({ i, j });
         if (currentCell == undefined) return;
 
         const pit = leaflet.rectangle(board.getCellBounds(currentCell));
@@ -128,17 +157,30 @@ function pitFactory(i: number, j: number) {
             return container;
         });
 
-        pitMap.set(`${i}, ${j}`, pit);
+        pitMap.set(`${i},${j}`, pit);
 
         pit.addTo(worldMapData);
     }
 }
 
+function getLocalPits() {
+    for (let i = -NEIGHBORHOOD_SIZE; i < NEIGHBORHOOD_SIZE; i++) {
+        for (let j = -NEIGHBORHOOD_SIZE; j < NEIGHBORHOOD_SIZE; j++) {
 
-for (let i = -NEIGHBORHOOD_SIZE; i < NEIGHBORHOOD_SIZE; i++) {
-    for (let j = - NEIGHBORHOOD_SIZE; j < NEIGHBORHOOD_SIZE; j++) {
-        if (luck([i, j].toString()) < PIT_SPAWN_PROBABILITY) {
-            pitFactory(i, j);
+            const posX = playerMarker.getLatLng().lat + (i * TILE_DEGREES);
+            const posY = playerMarker.getLatLng().lng + (j * TILE_DEGREES);
+
+            if (luck([posX, posY].toString()) < PIT_SPAWN_PROBABILITY) {
+                pitFactory(posX, posY);
+            }
         }
     }
 }
+
+function shiftPlayerLocation(x: number, y: number) {
+    playerMarker.setLatLng(new LatLng(playerMarker.getLatLng().lat + (x * TILE_DEGREES), playerMarker.getLatLng().lng + (y * TILE_DEGREES)));
+    worldMapData.setView(playerMarker.getLatLng());
+    console.log(`player lat lng: ${playerMarker.getLatLng().lat}, ${playerMarker.getLatLng().lng}`);
+    getLocalPits();
+}
+
