@@ -8,24 +8,42 @@ import { Cell } from "./board.ts";
 
 const SHIFT_AMOUNT = 8;
 
-interface Coin {
-    cell: Cell;
-    index: number;
+interface Geocoin {
+    mintingLocation: Cell;
+    serialNumber: number;
 }
 
-interface CoinList {
-    inventory: Coin[];
+interface Memento<T> {
+    toMemento(): T;
+    fromMemento(memento: T): void;
 }
 
-function displayCoins(coinList: CoinList): string {
-    let coinListString = "";
-    coinList.inventory.forEach((coin, index) => {
-        coinListString += `[${coin.cell.i},${coin.cell.j}]: index ${coin.index}`;
-        if (index !== coinList.inventory.length - 1)
-            coinListString += `, `;
-    });
+class Geocache implements Memento<string> {
+    coins: Geocoin[];
+    description: string;
 
-    return coinListString;
+    constructor(cell: Cell) {
+        const A = ["gwingy", "observable", "tenuous", "flat-footed", "terrible", "off-brand", "garlupious"];
+        const B = ["zone", "spot", "hangout", "cul-de-sac", "twizzler depot", "ten-pennierre", "kava bar", "flat"];
+
+        const selectedA = `The ${A[Math.floor(luck(["descA", cell.i, cell.j].toString()) * A.length)]}`;
+        const selectedB = B[Math.floor(luck(["descB", cell.i, cell.j].toString()) * B.length)];
+        this.description = `${selectedA} ${selectedB}`;
+
+        const numInitialCoins = Math.floor(luck(["intialCoins", cell.i, cell.j].toString()) * 3);
+        this.coins = [];
+        for (let i = 0; i < numInitialCoins; i++) {
+            this.coins.push({ mintingLocation: cell, serialNumber: i });
+        }
+    }
+    toMemento(): string {
+        const stringified = JSON.stringify(this.coins);
+        return stringified;
+    }
+
+    fromMemento(memento: string) {
+        this.coins = JSON.parse(memento) as Geocoin[];
+    }
 }
 
 export const MERRILL_CLASSROOM = leaflet.latLng({
@@ -33,20 +51,17 @@ export const MERRILL_CLASSROOM = leaflet.latLng({
     lng: - 122.0533
 });
 
-// You need to store this too
-const masterCoinList: CoinList =
-{
-    inventory: [],
-};
+const inventory: Geocoin[] = [];
+
 const GAMEPLAY_ZOOM_LEVEL = 19;
 const TILE_DEGREES = 1e-4; //0.0001 degrees wide
 const NEIGHBORHOOD_SIZE = 8;
-const PIT_SPAWN_PROBABILITY = 0.1;
+const CACHE_SPAWN_PROBABILITY = 0.1;
 
 const board: Board = new Board(TILE_DEGREES, NEIGHBORHOOD_SIZE);
 
 // You need to store this map in some local storage data 
-const pitData: Map<Cell, Coin[]> = new Map<Cell, Coin[]>();
+const geoCacheMemento: Map<Cell, string> = new Map<Cell, string>();
 
 const mapContainer = document.querySelector<HTMLElement>("#map")!;
 
@@ -58,8 +73,6 @@ const worldMapData = leaflet.map(mapContainer, {
     zoomControl: false,
     scrollWheelZoom: false
 });
-
-const pitMap: Map<string, leaflet.Layer> = new Map<string, leaflet.Layer>();
 
 leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
@@ -75,7 +88,7 @@ sensorButton.addEventListener("click", () => {
     navigator.geolocation.watchPosition((position) => {
         playerMarker.setLatLng(leaflet.latLng(position.coords.latitude, position.coords.longitude));
         worldMapData.setView(playerMarker.getLatLng());
-        getLocalPits();
+        getLocalCaches();
     });
 });
 
@@ -103,75 +116,66 @@ westButton.addEventListener("click", () => {
 const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
 statusPanel.innerHTML = "No points yet...";
 
-getLocalPits();
+getLocalCaches();
 
+function cacheFactory(i: number, j: number) {
+    const currentCell: Cell = board.getCanonicalCell({ i, j });
 
-function pitFactory(i: number, j: number) {
     // Does this pit already exist at these coordinates?
-    if (pitMap.has(`${i},${j}`)) {
-        return pitMap.get(`${i},${j}`);
+
+    if (geoCacheMemento.has(currentCell)) {
+        console.log(`Existing memento found!`);
+        return new Geocache(currentCell).fromMemento(geoCacheMemento.get(currentCell)!);
     } else {
-        const currentCell: Cell = board.getCanonicalCell({ i, j });
+        console.log(`brand new FUCKING memento created.`);
         if (currentCell == undefined) return;
+    }
+    const pit = leaflet.rectangle(board.getCellBounds(currentCell));
 
-        const pit = leaflet.rectangle(board.getCellBounds(currentCell));
-        const coinList: CoinList =
-        {
-            inventory: []
-        };
+    const newCache = new Geocache(currentCell);
 
-        pitData.set(currentCell, coinList.inventory);
+    geoCacheMemento.set(currentCell, newCache.toMemento());
 
-        pit.bindPopup(() => {
-            const numOfCoins = 5;
-            for (let k = 0; k < numOfCoins; k++) {
-                coinList.inventory.push(
-                    {
-                        cell: currentCell,
-                        index: k
-                    });
-            }
+    pit.bindPopup(() => {
 
+        const container = document.createElement("div");
+        container.innerHTML = `
+            <div> There is a cache here at "${i},${j}".It has the following: <span id="value"> ${newCache.toMemento()} </span>.</div >
+                <button id="withdraw"> withdraw </button>
+                    <button id="deposit">deposit</button>`;
 
-            const container = document.createElement("div");
-            container.innerHTML = `
-                <div>There is a pit here at "${i},${j}". It has the following: <span id="value">${displayCoins(coinList)}</span>.</div>
-                <button id="poke">poke</button>
-                <button id="deposit">deposit</button>`;
+        const poke = container.querySelector<HTMLButtonElement>("#withdraw")!;
+        poke.addEventListener("click", () => {
+            if (newCache.coins.length == 0) return;
+            inventory.push(newCache.coins.pop()!);
+            container.querySelector<HTMLSpanElement>("#value")!.innerHTML = newCache.toMemento();
+            statusPanel.innerHTML = `Coins accumulated: ${inventory.length}`;
+        });
+        const deposit = container.querySelector<HTMLButtonElement>("#deposit")!;
+        deposit.addEventListener("click", () => {
+            if (inventory.length == 0) return;
+            newCache.coins.push(inventory.pop()!);
+            container.querySelector<HTMLSpanElement>("#value")!.innerHTML = newCache.toMemento();
+            statusPanel.innerHTML = `Coins accumulated: ${inventory.length}`;
 
-            const poke = container.querySelector<HTMLButtonElement>("#poke")!;
-            poke.addEventListener("click", () => {
-                masterCoinList.inventory.push(coinList.inventory.pop()!);
-                container.querySelector<HTMLSpanElement>("#value")!.innerHTML = displayCoins(coinList);
-                statusPanel.innerHTML = `Coins accumulated: ${displayCoins(masterCoinList)}`;
-            });
-            const deposit = container.querySelector<HTMLButtonElement>("#deposit")!;
-            deposit.addEventListener("click", () => {
-                if (masterCoinList.inventory.length == 0) return;
-                coinList.inventory.push(masterCoinList.inventory.pop()!);
-                container.querySelector<HTMLSpanElement>("#value")!.innerHTML = displayCoins(coinList);
-                statusPanel.innerHTML = `Coins accumulated: ${displayCoins(masterCoinList)}`;
-
-            });
-
-            return container;
         });
 
-        pitMap.set(`${i},${j}`, pit);
+        return container;
+    });
 
-        pit.addTo(worldMapData);
-    }
+    pit.addTo(worldMapData);
 }
 
-function getLocalPits() {
+
+function getLocalCaches() {
     for (let i = -NEIGHBORHOOD_SIZE; i < NEIGHBORHOOD_SIZE; i++) {
         for (let j = -NEIGHBORHOOD_SIZE; j < NEIGHBORHOOD_SIZE; j++) {
 
             const posX = playerMarker.getLatLng().lat + (i * TILE_DEGREES);
             const posY = playerMarker.getLatLng().lng + (j * TILE_DEGREES);
 
-            if (luck([posX, posY].toString()) < PIT_SPAWN_PROBABILITY) {
-                pitFactory(posX, posY);
+            if (luck([posX, posY].toString()) < CACHE_SPAWN_PROBABILITY) {
+                cacheFactory(posX, posY);
             }
         }
     }
@@ -180,7 +184,6 @@ function getLocalPits() {
 function shiftPlayerLocation(x: number, y: number) {
     playerMarker.setLatLng(new LatLng(playerMarker.getLatLng().lat + (x * TILE_DEGREES), playerMarker.getLatLng().lng + (y * TILE_DEGREES)));
     worldMapData.setView(playerMarker.getLatLng());
-    console.log(`player lat lng: ${playerMarker.getLatLng().lat}, ${playerMarker.getLatLng().lng}`);
-    getLocalPits();
+    getLocalCaches();
 }
 

@@ -27,10 +27,8 @@ export class Board {
         const key = `${i},${j}`;
 
         if (this.knownCells.has(key)) {
-            console.log("Returned existing canonical cell instead of creating new one.");
             return this.knownCells.get(key)!;
         } else {
-            console.log("Brand new cell created.");
             return this.createCanonicalCell(i, j);
         }
     }
