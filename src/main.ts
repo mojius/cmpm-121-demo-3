@@ -5,53 +5,13 @@ import luck from "./luck";
 import "./leafletWorkaround";
 import { Board } from "./board.ts";
 import { Cell } from "./board.ts";
+import { Geocoin } from "./geocoin.ts";
+import { Geocache } from "./geocoin.ts";
 
 const SHIFT_AMOUNT = 8;
 
-interface Geocoin {
-    mintingLocation: Cell;
-    serialNumber: number;
-}
-
-interface Memento<T> {
-    toMemento(): T;
-    fromMemento(memento: T): void;
-}
-
-class Geocache implements Memento<string> {
-    coins: Geocoin[];
-    description: string;
-
-    constructor(cell: Cell) {
-        const A = ["gwingy", "observable", "tenuous", "flat-footed", "terrible", "off-brand", "garlupious"];
-        const B = ["zone", "spot", "hangout", "cul-de-sac", "twizzler depot", "ten-pennierre", "kava bar", "flat"];
-
-        const selectedA = `The ${A[Math.floor(luck(["descA", cell.i, cell.j].toString()) * A.length)]}`;
-        const selectedB = B[Math.floor(luck(["descB", cell.i, cell.j].toString()) * B.length)];
-        this.description = `${selectedA} ${selectedB}`;
-
-        const numInitialCoins = Math.floor(luck(["intialCoins", cell.i, cell.j].toString()) * 3);
-        this.coins = [];
-        for (let i = 0; i < numInitialCoins; i++) {
-            this.coins.push({ mintingLocation: cell, serialNumber: i });
-        }
-    }
-    toMemento(): string {
-        const stringified = JSON.stringify(this.coins);
-        return stringified;
-    }
-
-    fromMemento(memento: string) {
-        this.coins = JSON.parse(memento) as Geocoin[];
-    }
-}
-
-export const MERRILL_CLASSROOM = leaflet.latLng({
-    lat: 36.9995,
-    lng: - 122.0533
-});
-
 const inventory: Geocoin[] = [];
+const localPitData: leaflet.Rectangle[] = [];
 
 const GAMEPLAY_ZOOM_LEVEL = 19;
 const TILE_DEGREES = 1e-4; //0.0001 degrees wide
@@ -65,6 +25,12 @@ const geoCacheMemento: Map<Cell, string> = new Map<Cell, string>();
 
 const mapContainer = document.querySelector<HTMLElement>("#map")!;
 
+
+export const MERRILL_CLASSROOM = leaflet.latLng({
+    lat: 36.9995,
+    lng: - 122.0533
+});
+
 const worldMapData = leaflet.map(mapContainer, {
     center: MERRILL_CLASSROOM,
     zoom: GAMEPLAY_ZOOM_LEVEL,
@@ -73,6 +39,8 @@ const worldMapData = leaflet.map(mapContainer, {
     zoomControl: false,
     scrollWheelZoom: false
 });
+
+rigButtons();
 
 leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
@@ -83,65 +51,36 @@ const playerMarker = leaflet.marker(MERRILL_CLASSROOM);
 playerMarker.bindTooltip("That's you!");
 playerMarker.addTo(worldMapData);
 
-const sensorButton = document.querySelector("#sensor")!;
-sensorButton.addEventListener("click", () => {
-    navigator.geolocation.watchPosition((position) => {
-        playerMarker.setLatLng(leaflet.latLng(position.coords.latitude, position.coords.longitude));
-        worldMapData.setView(playerMarker.getLatLng());
-        getLocalCaches();
-    });
-});
-
-const northButton = document.querySelector("#north")!;
-const southButton = document.querySelector("#south")!;
-const eastButton = document.querySelector("#east")!;
-const westButton = document.querySelector("#west")!;
-
-northButton.addEventListener("click", () => {
-    shiftPlayerLocation(SHIFT_AMOUNT, 0);
-});
-
-southButton.addEventListener("click", () => {
-    shiftPlayerLocation(-SHIFT_AMOUNT, 0);
-});
-
-eastButton.addEventListener("click", () => {
-    shiftPlayerLocation(0, SHIFT_AMOUNT);
-});
-
-westButton.addEventListener("click", () => {
-    shiftPlayerLocation(0, -SHIFT_AMOUNT);
-});
-
 const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
 statusPanel.innerHTML = "No points yet...";
 
-getLocalCaches();
+spawnLocalCaches();
 
 function cacheFactory(i: number, j: number) {
     const currentCell: Cell = board.getCanonicalCell({ i, j });
 
     // Does this pit already exist at these coordinates?
+    let newCache: Geocache;
 
     if (geoCacheMemento.has(currentCell)) {
-        console.log(`Existing memento found!`);
-        return new Geocache(currentCell).fromMemento(geoCacheMemento.get(currentCell)!);
+        newCache = new Geocache(currentCell);
+        newCache.fromMemento(geoCacheMemento.get(currentCell)!);
+        console.log(geoCacheMemento.get(currentCell));
     } else {
-        console.log(`brand new FUCKING memento created.`);
         if (currentCell == undefined) return;
+        newCache = new Geocache(currentCell);
+
+        geoCacheMemento.set(currentCell, newCache.toMemento());
     }
+
     const pit = leaflet.rectangle(board.getCellBounds(currentCell));
-
-    const newCache = new Geocache(currentCell);
-
-    geoCacheMemento.set(currentCell, newCache.toMemento());
 
     pit.bindPopup(() => {
 
         const container = document.createElement("div");
         container.innerHTML = `
-            <div> There is a cache here at "${i},${j}".It has the following: <span id="value"> ${newCache.toMemento()} </span>.</div >
-                <button id="withdraw"> withdraw </button>
+            <div>There is a cache here at "${i},${j}".It has the following: <span id="value"> ${newCache.toMemento()} </span>.</div>
+                <button id="withdraw">withdraw</button>
                     <button id="deposit">deposit</button>`;
 
         const poke = container.querySelector<HTMLButtonElement>("#withdraw")!;
@@ -149,6 +88,7 @@ function cacheFactory(i: number, j: number) {
             if (newCache.coins.length == 0) return;
             inventory.push(newCache.coins.pop()!);
             container.querySelector<HTMLSpanElement>("#value")!.innerHTML = newCache.toMemento();
+            geoCacheMemento.set(currentCell, newCache.toMemento());
             statusPanel.innerHTML = `Coins accumulated: ${inventory.length}`;
         });
         const deposit = container.querySelector<HTMLButtonElement>("#deposit")!;
@@ -156,18 +96,18 @@ function cacheFactory(i: number, j: number) {
             if (inventory.length == 0) return;
             newCache.coins.push(inventory.pop()!);
             container.querySelector<HTMLSpanElement>("#value")!.innerHTML = newCache.toMemento();
+            geoCacheMemento.set(currentCell, newCache.toMemento());
             statusPanel.innerHTML = `Coins accumulated: ${inventory.length}`;
-
         });
 
         return container;
     });
 
     pit.addTo(worldMapData);
+    localPitData.push(pit);
 }
 
-
-function getLocalCaches() {
+function spawnLocalCaches() {
     for (let i = -NEIGHBORHOOD_SIZE; i < NEIGHBORHOOD_SIZE; i++) {
         for (let j = -NEIGHBORHOOD_SIZE; j < NEIGHBORHOOD_SIZE; j++) {
 
@@ -182,8 +122,45 @@ function getLocalCaches() {
 }
 
 function shiftPlayerLocation(x: number, y: number) {
-    playerMarker.setLatLng(new LatLng(playerMarker.getLatLng().lat + (x * TILE_DEGREES), playerMarker.getLatLng().lng + (y * TILE_DEGREES)));
+
+    const plLat = playerMarker.getLatLng().lat + (x * TILE_DEGREES);
+    const plLng = playerMarker.getLatLng().lng + (y * TILE_DEGREES);
+
+    playerMarker.setLatLng(new LatLng(plLat, plLng));
     worldMapData.setView(playerMarker.getLatLng());
-    getLocalCaches();
+    localPitData.forEach((pit) => {
+        pit.remove();
+    });
+    localPitData.length = 0;
+    spawnLocalCaches();
 }
 
+function onPositionChanged(position: GeolocationPosition) {
+    playerMarker.setLatLng(leaflet.latLng(position.coords.latitude, position.coords.longitude));
+    worldMapData.setView(playerMarker.getLatLng());
+    spawnLocalCaches();
+}
+
+function rigCardinalButton(button: HTMLButtonElement, x: number, y: number) {
+    button.addEventListener("click", () => {
+        shiftPlayerLocation(x, y);
+    });
+}
+
+function rigButtons() {
+    const sensorButton = document.querySelector("#sensor")!;
+    sensorButton.addEventListener("click", () => {
+        navigator.geolocation.watchPosition(onPositionChanged);
+    });
+
+    const northButton: HTMLButtonElement = document.querySelector("#north")!;
+    rigCardinalButton(northButton, SHIFT_AMOUNT, 0);
+    const southButton: HTMLButtonElement = document.querySelector("#south")!;
+    rigCardinalButton(southButton, -SHIFT_AMOUNT, 0);
+    const eastButton: HTMLButtonElement = document.querySelector("#east")!;
+    rigCardinalButton(eastButton, 0, SHIFT_AMOUNT);
+    const westButton: HTMLButtonElement = document.querySelector("#west")!;
+    rigCardinalButton(westButton, 0, -SHIFT_AMOUNT);
+
+
+}
