@@ -52,6 +52,7 @@ export const MERRILL_CLASSROOM = leaflet.latLng({
 });
 
 const inventory: Geocoin[] = [];
+const localPitData: leaflet.Rectangle[] = [];
 
 const GAMEPLAY_ZOOM_LEVEL = 19;
 const TILE_DEGREES = 1e-4; //0.0001 degrees wide
@@ -122,26 +123,29 @@ function cacheFactory(i: number, j: number) {
     const currentCell: Cell = board.getCanonicalCell({ i, j });
 
     // Does this pit already exist at these coordinates?
+    let newCache: Geocache;
 
     if (geoCacheMemento.has(currentCell)) {
         console.log(`Existing memento found!`);
-        return new Geocache(currentCell).fromMemento(geoCacheMemento.get(currentCell)!);
+        newCache = new Geocache(currentCell);
+        newCache.fromMemento(geoCacheMemento.get(currentCell)!);
+        console.log(geoCacheMemento.get(currentCell));
     } else {
         console.log(`brand new FUCKING memento created.`);
         if (currentCell == undefined) return;
+        newCache = new Geocache(currentCell);
+
+        geoCacheMemento.set(currentCell, newCache.toMemento());
     }
+
     const pit = leaflet.rectangle(board.getCellBounds(currentCell));
-
-    const newCache = new Geocache(currentCell);
-
-    geoCacheMemento.set(currentCell, newCache.toMemento());
 
     pit.bindPopup(() => {
 
         const container = document.createElement("div");
         container.innerHTML = `
-            <div> There is a cache here at "${i},${j}".It has the following: <span id="value"> ${newCache.toMemento()} </span>.</div >
-                <button id="withdraw"> withdraw </button>
+            <div>There is a cache here at "${i},${j}".It has the following: <span id="value"> ${newCache.toMemento()} </span>.</div>
+                <button id="withdraw">withdraw</button>
                     <button id="deposit">deposit</button>`;
 
         const poke = container.querySelector<HTMLButtonElement>("#withdraw")!;
@@ -149,6 +153,7 @@ function cacheFactory(i: number, j: number) {
             if (newCache.coins.length == 0) return;
             inventory.push(newCache.coins.pop()!);
             container.querySelector<HTMLSpanElement>("#value")!.innerHTML = newCache.toMemento();
+            geoCacheMemento.set(currentCell, newCache.toMemento());
             statusPanel.innerHTML = `Coins accumulated: ${inventory.length}`;
         });
         const deposit = container.querySelector<HTMLButtonElement>("#deposit")!;
@@ -156,16 +161,16 @@ function cacheFactory(i: number, j: number) {
             if (inventory.length == 0) return;
             newCache.coins.push(inventory.pop()!);
             container.querySelector<HTMLSpanElement>("#value")!.innerHTML = newCache.toMemento();
+            geoCacheMemento.set(currentCell, newCache.toMemento());
             statusPanel.innerHTML = `Coins accumulated: ${inventory.length}`;
-
         });
 
         return container;
     });
 
     pit.addTo(worldMapData);
+    localPitData.push(pit);
 }
-
 
 function getLocalCaches() {
     for (let i = -NEIGHBORHOOD_SIZE; i < NEIGHBORHOOD_SIZE; i++) {
@@ -184,6 +189,9 @@ function getLocalCaches() {
 function shiftPlayerLocation(x: number, y: number) {
     playerMarker.setLatLng(new LatLng(playerMarker.getLatLng().lat + (x * TILE_DEGREES), playerMarker.getLatLng().lng + (y * TILE_DEGREES)));
     worldMapData.setView(playerMarker.getLatLng());
+    localPitData.forEach((pit) => {
+        pit.remove();
+    });
+    localPitData.length = 0;
     getLocalCaches();
 }
-
