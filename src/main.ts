@@ -71,7 +71,11 @@ function cacheFactory(i: number, j: number) {
         newCache = new Geocache(currentCell);
 
         geoCacheMemento.set(currentCell, newCache.toMemento());
+        newCache = new Geocache(currentCell);
+
+        geoCacheMemento.set(currentCell, newCache.toMemento());
     }
+
 
     const pit = leaflet.rectangle(board.getCellBounds(currentCell));
 
@@ -79,6 +83,8 @@ function cacheFactory(i: number, j: number) {
 
         const container = document.createElement("div");
         container.innerHTML = `
+            <div>There is a cache here at "${i},${j}".It has the following: <span id="value"> ${newCache.toMemento()} </span>.</div>
+                <button id="withdraw">withdraw</button>
             <div>There is a cache here at "${i},${j}".It has the following: <span id="value"> ${newCache.toMemento()} </span>.</div>
                 <button id="withdraw">withdraw</button>
                     <button id="deposit">deposit</button>`;
@@ -89,6 +95,7 @@ function cacheFactory(i: number, j: number) {
             inventory.push(newCache.coins.pop()!);
             container.querySelector<HTMLSpanElement>("#value")!.innerHTML = newCache.toMemento();
             geoCacheMemento.set(currentCell, newCache.toMemento());
+            geoCacheMemento.set(currentCell, newCache.toMemento());
             statusPanel.innerHTML = `Coins accumulated: ${inventory.length}`;
         });
         const deposit = container.querySelector<HTMLButtonElement>("#deposit")!;
@@ -96,6 +103,7 @@ function cacheFactory(i: number, j: number) {
             if (inventory.length == 0) return;
             newCache.coins.push(inventory.pop()!);
             container.querySelector<HTMLSpanElement>("#value")!.innerHTML = newCache.toMemento();
+            geoCacheMemento.set(currentCell, newCache.toMemento());
             geoCacheMemento.set(currentCell, newCache.toMemento());
             statusPanel.innerHTML = `Coins accumulated: ${inventory.length}`;
         });
