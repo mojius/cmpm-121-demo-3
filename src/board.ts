@@ -51,8 +51,7 @@ export class Board {
     getCellBounds(cell: Cell): leaflet.LatLngBounds {
         const bounds = leaflet.latLngBounds([
             [cell.i, cell.j],
-            [cell.i + (this.tileWidth),
-            cell.j + (this.tileWidth)],
+            [cell.i + (this.tileWidth), cell.j + (this.tileWidth)],
         ]);
         return bounds;
     }
@@ -61,9 +60,14 @@ export class Board {
         const resultCells: Cell[] = [];
         const originCell = this.getCellForPoint(point);
         // Search over cell-sized areas?
-        for (let i = -this.tileVisibilityRadius; i < this.tileVisibilityRadius; i++) {
-            for (let j = -this.tileVisibilityRadius; j < this.tileVisibilityRadius; j++) {
-                const cellInRadius: Cell = { i: originCell.i + (i * this.tileWidth), j: originCell.j + (j * this.tileWidth) };
+
+        const tvr = this.tileVisibilityRadius;
+
+        for (let i = -tvr; i < tvr; i++) {
+            for (let j = -tvr; j < tvr; j++) {
+                const lat = originCell.i + (i * this.tileWidth);
+                const lng = originCell.j + (j * this.tileWidth);
+                const cellInRadius: Cell = { i: lat, j: lng };
                 this.getCanonicalCell(cellInRadius);
             }
         }

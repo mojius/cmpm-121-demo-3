@@ -9,27 +9,21 @@ import { Geocoin } from "./geocoin.ts";
 import { Geocache } from "./geocoin.ts";
 
 const SHIFT_AMOUNT = 8;
-
-const inventory: Geocoin[] = [];
-const localPitData: leaflet.Rectangle[] = [];
-
-const GAMEPLAY_ZOOM_LEVEL = 19;
 const TILE_DEGREES = 1e-4; //0.0001 degrees wide
 const NEIGHBORHOOD_SIZE = 8;
+const GAMEPLAY_ZOOM_LEVEL = 19;
 const CACHE_SPAWN_PROBABILITY = 0.1;
-
-const board: Board = new Board(TILE_DEGREES, NEIGHBORHOOD_SIZE);
-
-// You need to store this map in some local storage data 
-const geoCacheMemento: Map<Cell, string> = new Map<Cell, string>();
-
-const mapContainer = document.querySelector<HTMLElement>("#map")!;
-
-
 export const MERRILL_CLASSROOM = leaflet.latLng({
     lat: 36.9995,
     lng: - 122.0533
 });
+
+const inventory: Geocoin[] = [];
+const localCacheData: leaflet.Rectangle[] = [];
+
+const board: Board = new Board(TILE_DEGREES, NEIGHBORHOOD_SIZE);
+const geoCacheMemento: Map<Cell, string> = new Map<Cell, string>();
+const mapContainer = document.querySelector<HTMLElement>("#map")!;
 
 const worldMapData = leaflet.map(mapContainer, {
     center: MERRILL_CLASSROOM,
@@ -56,10 +50,15 @@ statusPanel.innerHTML = "No points yet...";
 
 spawnLocalCaches();
 
+
+
+
+
+
 function cacheFactory(i: number, j: number) {
     const currentCell: Cell = board.getCanonicalCell({ i, j });
 
-    // Does this pit already exist at these coordinates?
+    // Does this cache already exist at these coordinates?
     let newCache: Geocache;
 
     if (geoCacheMemento.has(currentCell)) {
@@ -69,50 +68,15 @@ function cacheFactory(i: number, j: number) {
     } else {
         if (currentCell == undefined) return;
         newCache = new Geocache(currentCell);
-
-        geoCacheMemento.set(currentCell, newCache.toMemento());
-        newCache = new Geocache(currentCell);
-
         geoCacheMemento.set(currentCell, newCache.toMemento());
     }
 
+    const displayedCache = leaflet.rectangle(board.getCellBounds(currentCell));
 
-    const pit = leaflet.rectangle(board.getCellBounds(currentCell));
+    bindPopupsToCache(displayedCache, newCache, currentCell);
 
-    pit.bindPopup(() => {
-
-        const container = document.createElement("div");
-        container.innerHTML = `
-            <div>There is a cache here at "${i},${j}".It has the following: <span id="value"> ${newCache.toMemento()} </span>.</div>
-                <button id="withdraw">withdraw</button>
-            <div>There is a cache here at "${i},${j}".It has the following: <span id="value"> ${newCache.toMemento()} </span>.</div>
-                <button id="withdraw">withdraw</button>
-                    <button id="deposit">deposit</button>`;
-
-        const poke = container.querySelector<HTMLButtonElement>("#withdraw")!;
-        poke.addEventListener("click", () => {
-            if (newCache.coins.length == 0) return;
-            inventory.push(newCache.coins.pop()!);
-            container.querySelector<HTMLSpanElement>("#value")!.innerHTML = newCache.toMemento();
-            geoCacheMemento.set(currentCell, newCache.toMemento());
-            geoCacheMemento.set(currentCell, newCache.toMemento());
-            statusPanel.innerHTML = `Coins accumulated: ${inventory.length}`;
-        });
-        const deposit = container.querySelector<HTMLButtonElement>("#deposit")!;
-        deposit.addEventListener("click", () => {
-            if (inventory.length == 0) return;
-            newCache.coins.push(inventory.pop()!);
-            container.querySelector<HTMLSpanElement>("#value")!.innerHTML = newCache.toMemento();
-            geoCacheMemento.set(currentCell, newCache.toMemento());
-            geoCacheMemento.set(currentCell, newCache.toMemento());
-            statusPanel.innerHTML = `Coins accumulated: ${inventory.length}`;
-        });
-
-        return container;
-    });
-
-    pit.addTo(worldMapData);
-    localPitData.push(pit);
+    displayedCache.addTo(worldMapData);
+    localCacheData.push(displayedCache);
 }
 
 function spawnLocalCaches() {
@@ -136,11 +100,16 @@ function shiftPlayerLocation(x: number, y: number) {
 
     playerMarker.setLatLng(new LatLng(plLat, plLng));
     worldMapData.setView(playerMarker.getLatLng());
-    localPitData.forEach((pit) => {
+
+    clearLocalCaches();
+    spawnLocalCaches();
+}
+
+function clearLocalCaches() {
+    localCacheData.forEach((pit) => {
         pit.remove();
     });
-    localPitData.length = 0;
-    spawnLocalCaches();
+    localCacheData.length = 0;
 }
 
 function onPositionChanged(position: GeolocationPosition) {
@@ -170,5 +139,46 @@ function rigButtons() {
     const westButton: HTMLButtonElement = document.querySelector("#west")!;
     rigCardinalButton(westButton, 0, -SHIFT_AMOUNT);
 
+}
 
+function bindPopupsToCache(displayedCache: leaflet.Rectangle, cache: Geocache, cell: Cell) {
+    displayedCache.bindPopup(() => {
+
+        const container = document.createElement("div");
+        container.innerHTML = `
+            <div>There is a cache here at "${cell.i},${cell.j}".It has the following: <span id="value"> ${cache.toMemento()} </span>.</div>
+                <button id="withdraw">withdraw</button>
+            <div>There is a cache here at "${cell.i},${cell.j}".It has the following: <span id="value"> ${cache.toMemento()} </span>.</div>
+                <button id="withdraw">withdraw</button>
+                <button id="deposit">deposit</button>`;
+
+        const withdraw = container.querySelector<HTMLButtonElement>("#withdraw")!;
+        withdraw.addEventListener("click", () => {
+            onCacheWithdraw(cache, cell, container);
+        });
+        const deposit = container.querySelector<HTMLButtonElement>("#deposit")!;
+        deposit.addEventListener("click", () => {
+            onCacheDeposit(cache, cell, container);
+        });
+
+        return container;
+    });
+}
+
+function onCacheWithdraw(cache: Geocache, cell: Cell, container: HTMLDivElement) {
+    if (cache.coins.length == 0) return;
+    inventory.push(cache.coins.pop()!);
+    container.querySelector<HTMLSpanElement>("#value")!.innerHTML = cache.toMemento();
+    geoCacheMemento.set(cell, cache.toMemento());
+    geoCacheMemento.set(cell, cache.toMemento());
+    statusPanel.innerHTML = `Coins accumulated: ${inventory.length}`;
+}
+
+function onCacheDeposit(cache: Geocache, cell: Cell, container: HTMLDivElement) {
+    if (inventory.length == 0) return;
+    cache.coins.push(inventory.pop()!);
+    container.querySelector<HTMLSpanElement>("#value")!.innerHTML = cache.toMemento();
+    geoCacheMemento.set(cell, cache.toMemento());
+    geoCacheMemento.set(cell, cache.toMemento());
+    statusPanel.innerHTML = `Coins accumulated: ${inventory.length}`;
 }
