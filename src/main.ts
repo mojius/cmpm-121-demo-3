@@ -25,7 +25,8 @@ let geoCacheMemento: Map<string, string> = new Map<string, string>();
 let inventory: Geocoin[] = [];
 let playerPosHistory: leaflet.LatLng[] = [];
 
-let polyLine: leaflet.Polyline; // eslint-disable-line 
+// eslint-disable-next-line no-unused-vars
+let pl: leaflet.Polyline;
 
 const board: Board = new Board(TILE_DEGREES, NEIGHBORHOOD_SIZE);
 const mapContainer = document.querySelector<HTMLElement>("#map")!;
@@ -244,22 +245,23 @@ function onCacheDeposit(cache: Geocache, cell: string, container: HTMLDivElement
 
 function updatePolyline(latLng: leaflet.LatLng) {
     playerPosHistory.push(latLng);
-    polyLine = polyline(playerPosHistory, { color: "red" }).addTo(worldMapData);
+    pl = polyline(playerPosHistory, { color: "red" }).addTo(worldMapData);
+    console.log(pl);
 }
 
 function wipeData() {
-    //const finalPrompt = prompt(`Are you sure you want to clear all of your data: This cannot be undone.
-    //Type "yes" to continue.`);
-    //if (finalPrompt == "yes") {
-    localStorage.clear();
-    inventory.length = 0;
-    clearLocalCaches();
-    playerPosHistory.length = 0;
-    geoCacheMemento.clear();
-    playerMarker.setLatLng(MERRILL_CLASSROOM);
+    const finalPrompt = prompt(`Are you sure you want to clear all of your data: This cannot be undone.
+    Type "yes" to continue.`);
+    if (finalPrompt == "yes") {
+        localStorage.clear();
+        inventory.length = 0;
+        clearLocalCaches();
+        playerPosHistory.length = 0;
+        geoCacheMemento.clear();
+        playerMarker.setLatLng(MERRILL_CLASSROOM);
 
-    location.reload();
-    //}
+        location.reload();
+    }
 
 }
 
